@@ -1,0 +1,19 @@
+[package]
+name = "file_host"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+infer = "0.5.0"
+rocket = { version = "0.5.0-rc.1", default-features = false, features = [
+    "json",
+] }
+rocket_okapi = { git = "https://github.com/GREsau/okapi", features = [
+    "swagger",
+    "rapidoc",
+] }
+serde = "1.0"
+uuid = { version = "0.8.2", features = ["serde", "v4"] }
+schemars = "0.8.8"
