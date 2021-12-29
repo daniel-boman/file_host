@@ -1,13 +1,9 @@
 #[macro_use]
 extern crate rocket;
 
-use infer::{get, is_image};
-use rocket::response::*;
 use rocket::serde::{json::Json, Deserialize, Serialize};
-use rocket::{data::ToByteUnit, post, Data};
-use rocket_okapi::JsonSchema;
-use rocket_okapi::{openapi, openapi_get_routes, rapidoc::*, settings::UrlObject};
-use std::hash::{Hash, Hasher};
+use rocket::{data::ToByteUnit, http::Status, post, response, Data};
+use rocket_okapi::{openapi, openapi_get_routes, rapidoc::*, settings::UrlObject, JsonSchema};
 use uuid::Uuid;
 
 #[launch]
@@ -39,30 +35,46 @@ async fn index() -> &'static str {
 
 #[openapi]
 #[post("/upload", data = "<file>")]
-async fn upload(mut file: Data<'_>) -> Option<Json<FileUpload>> {
+/// Uploads provided file.  
+///
+/// **Only accepts images.**
+async fn upload(
+    mut file: Data<'_>,
+) -> Result<Json<FileUpload>, response::status::Custom<Json<ApiResponse>>> {
     let header = file.peek(128usize).await;
     let kind = infer::get(&header).expect("Filetype is unknown");
 
     if !infer::is_image(&header) {
-        return None;
+        return Err(response::status::Custom(
+            Status::BadRequest,
+            Json::from(ApiResponse {
+                message: "This route only accepts images",
+            }),
+        ));
     }
 
     let id = Uuid::new_v4();
     let ext = kind.extension();
 
-    let filename = format!("upload/{}.", id);
-
-    match file.open(5i32.megabytes()).into_file(filename).await {
-        Ok(_) => (),
-        Err(err) => {
-            println!("Error creating file: {:?}", err);
-            return None;
-        }
-    }
-
     let file_upload = FileUpload::new(id.to_string(), ext.to_string());
+    let filename = format!("upload/{filename}", filename = file_upload.filename());
 
-    Some(Json::from(file_upload))
+    if let Err(err) = file.open(5i32.megabytes()).into_file(filename).await {
+        println!("Error uploading file: {:?}", err);
+        return Err(response::status::Custom(
+            Status::InternalServerError,
+            Json::from(ApiResponse {
+                message: "Failed to upload file",
+            }),
+        ));
+    };
+
+    Ok(Json::from(file_upload))
+}
+
+#[derive(JsonSchema, Serialize, Deserialize, Debug, Responder)]
+struct ApiResponse {
+    message: &'static str,
 }
 
 #[derive(JsonSchema, Serialize, Deserialize, Debug)]
