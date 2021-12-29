@@ -1,8 +1,11 @@
 #[macro_use]
 extern crate rocket;
 
+mod error;
+
+use error::Error;
 use rocket::serde::{json::Json, Deserialize, Serialize};
-use rocket::{data::ToByteUnit, http::Status, post, response, Data};
+use rocket::{data::ToByteUnit, http::Status, post, Data};
 use rocket_okapi::{openapi, openapi_get_routes, rapidoc::*, settings::UrlObject, JsonSchema};
 use uuid::Uuid;
 
@@ -38,18 +41,14 @@ async fn index() -> &'static str {
 /// Uploads provided file.  
 ///
 /// **Only accepts images.**
-async fn upload(
-    mut file: Data<'_>,
-) -> Result<Json<FileUpload>, response::status::Custom<Json<ApiResponse>>> {
+async fn upload(mut file: Data<'_>) -> Result<Json<FileUpload>, Error> {
     let header = file.peek(128usize).await;
     let kind = infer::get(&header).expect("Filetype is unknown");
 
     if !infer::is_image(&header) {
-        return Err(response::status::Custom(
-            Status::BadRequest,
-            Json::from(ApiResponse {
-                message: "This route only accepts images",
-            }),
+        return Err(Error::InvalidFileType(
+            Status::BadRequest.code,
+            "This route only accepts images".to_string(),
         ));
     }
 
@@ -61,20 +60,14 @@ async fn upload(
 
     if let Err(err) = file.open(5i32.megabytes()).into_file(filename).await {
         println!("Error uploading file: {:?}", err);
-        return Err(response::status::Custom(
-            Status::InternalServerError,
-            Json::from(ApiResponse {
-                message: "Failed to upload file",
-            }),
+
+        return Err(Error::InternalError(
+            Status::InternalServerError.code,
+            "Failed to upload file".to_string(),
         ));
     };
 
     Ok(Json::from(file_upload))
-}
-
-#[derive(JsonSchema, Serialize, Deserialize, Debug, Responder)]
-struct ApiResponse {
-    message: &'static str,
 }
 
 #[derive(JsonSchema, Serialize, Deserialize, Debug)]
