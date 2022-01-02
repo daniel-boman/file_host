@@ -1,0 +1,14 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "askForPassword": true,
+            "driver": "PostgreSQL",
+            "connectString": "postgresql://postgres:penis@localhost:5432/penis",
+            "connectionTimeout": 15,
+            "name": "development"
+        }
+    ]
+}

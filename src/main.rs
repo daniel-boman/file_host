@@ -1,23 +1,43 @@
 #[macro_use]
 extern crate rocket;
 
+use rocket::{Build, Rocket};
+use rocket_okapi::mount_endpoints_and_merged_docs;
+use rocket_okapi::swagger_ui::{make_swagger_ui, SwaggerUIConfig};
+use rocket_okapi::{okapi::openapi3::OpenApi, rapidoc::*, settings::UrlObject};
+
+pub mod api;
+pub mod db;
 mod error;
+mod files;
 
-use error::Error;
-use rocket::serde::{json::Json, Deserialize, Serialize};
-use rocket::{data::ToByteUnit, http::Status, post, Data};
-use rocket_okapi::{openapi, openapi_get_routes, rapidoc::*, settings::UrlObject, JsonSchema};
-use uuid::Uuid;
+#[rocket::main]
+async fn main() {
+    let launch_result = build_rocket().await.launch().await;
+    match launch_result {
+        Ok(_) => (),
+        Err(err) => println!("Error with rocket server: {}", err),
+    }
+}
 
-#[launch]
-fn rocket() -> _ {
-    rocket::build()
-        .mount("/", openapi_get_routes![index, upload])
+async fn build_rocket() -> Rocket<Build> {
+    dotenv::dotenv().ok();
+
+    let mut build = db::init(rocket::build())
+        .await
+        .mount(
+            "/swagger-ui/",
+            make_swagger_ui(&SwaggerUIConfig {
+                url: "../v1/openapi.json".to_owned(),
+                ..Default::default()
+            }),
+        )
         .mount(
             "/rapidoc/",
             make_rapidoc(&RapiDocConfig {
                 general: GeneralConfig {
-                    spec_urls: vec![UrlObject::new("General", "../openapi.json")],
+                    spec_urls: vec![UrlObject::new("General", "../v1/openapi.json")],
+
                     ..Default::default()
                 },
                 hide_show: HideShowConfig {
@@ -25,102 +45,53 @@ fn rocket() -> _ {
                     allow_spec_file_load: false,
                     ..Default::default()
                 },
+                ui: UiConfig {
+                    theme: Theme::Dark,
+                    ..Default::default()
+                },
                 ..Default::default()
             }),
-        )
-}
+        );
 
-#[openapi]
-#[get("/")]
-async fn index() -> &'static str {
-    "Hello, World!"
-}
-
-#[openapi]
-#[post("/upload", data = "<file>")]
-/// Uploads provided file.  
-///
-/// **Only accepts images.**
-async fn upload(mut file: Data<'_>) -> Result<Json<FileUpload>, Error> {
-    let header = file.peek(128usize).await;
-    let kind = infer::get(&header).expect("Filetype is unknown");
-
-    if !infer::is_image(&header) {
-        return Err(Error::InvalidFileType(
-            Status::BadRequest.code,
-            "This route only accepts images".to_string(),
-        ));
-    }
-
-    let id = Uuid::new_v4();
-    let ext = kind.extension();
-
-    let file_upload = FileUpload::new(id.to_string(), ext.to_string());
-    let filename = format!("upload/{filename}", filename = file_upload.filename());
-
-    if let Err(err) = file.open(5i32.megabytes()).into_file(filename).await {
-        println!("Error uploading file: {:?}", err);
-
-        return Err(Error::InternalError(
-            Status::InternalServerError.code,
-            "Failed to upload file".to_string(),
-        ));
+    let settings = rocket_okapi::settings::OpenApiSettings::default();
+    let route_spec = (vec![], custom_spec());
+    //let route_spec = (openapi_get_routes![index], custom_spec()); // TODO: fix this
+    mount_endpoints_and_merged_docs! {
+        build, "/v1".to_owned(), settings,
+        "/" => route_spec,
+        "/file" => files::get_routes_and_docs(&settings),
     };
 
-    Ok(Json::from(file_upload))
+    // build.register("/", catchers![not_found_index])
+    build
 }
 
-#[derive(JsonSchema, Serialize, Deserialize, Debug)]
-struct FileUpload {
-    id: String,
-    ext: String,
-    url: Option<String>,
-}
-
-impl FileUpload {
-    pub fn new(id: String, ext: String) -> Self {
-        let mut file_upload = FileUpload {
-            id: id,
-            ext: ext,
-            url: None,
-        };
-        file_upload.url = Some(file_upload.url());
-
-        file_upload
-    }
-    pub fn url(&self) -> String {
-        format!(
-            "{host}/{filename}",
-            host = "127.0.0.1:8000",
-            filename = self.filename()
-        )
-    }
-    pub fn filename(&self) -> String {
-        format!("{id}.{ext}", id = self.id, ext = self.ext)
+fn custom_spec() -> OpenApi {
+    use rocket_okapi::okapi::openapi3::*;
+    OpenApi {
+        openapi: OpenApi::default_version(),
+        info: Info {
+            title: "file host".to_owned(),
+            description: Some("an api for uploading and serving files".to_owned()),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            ..Default::default()
+        },
+        servers: vec![Server {
+            url: "http://127.0.0.1:8000/v1".to_owned(),
+            description: Some("localhost".to_owned()),
+            ..Default::default()
+        }],
+        ..Default::default()
     }
 }
 
-/*
-#[openapi]
-#[post("/", data = "<file>")]
-async fn upload(mut file: Data<'_>) -> crate::Result<FileUpload> {
-    let header = file.peek(128usize).await;
-    let kind = infer::get(&header).expect("Filetype is unknown");
-
-    if !infer::is_image(&header) {
-        return Err(crate::Err);
+//#[openapi]
+//#[get("/")]
+#[catch(404)]
+fn not_found_index(req: &rocket::Request) -> Result<String, rocket::response::Redirect> {
+    if req.uri().path() == "/" {
+        return Err(rocket::response::Redirect::to(uri!("/rapidoc")));
     }
 
-    let id = Uuid::new_v4();
-    let url = format!("{}/{}\n", "http://localhost:8000", id.to_string());
-    let ext = kind.extension();
-    //let file_upload = FileUpload { id: id.clone() };
-
-    let filename = format!("upload/{}.", id);
-
-    file.open(5i32.megabytes()).into_file(filename).await?;
-    /*
-    status::Created::new("http://myservice.com/resource.json")
-        .tagged_body("{ 'resource': 'Hello, world!' }"); */
-
-}*/
+    Ok("404 Not Found".to_string())
+}
