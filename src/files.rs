@@ -77,7 +77,9 @@ pub async fn upload(
         ));
     }
 
-    let mut file = File::create(format!("upload/{}", file_name)).await?;
+    let file_path = std::env::var("UPLOAD_PATH").expect("UPLOAD_PATH not set");
+
+    let mut file = File::create(format!("{}/{}", file_path, file_name)).await?;
 
     io::copy(&mut result.value.as_slice(), &mut file).await?;
 
