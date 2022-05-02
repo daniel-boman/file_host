@@ -1,3 +1,4 @@
+use chrono::Utc;
 use sqlx::{Pool, Postgres};
 
 #[derive(Debug)]
@@ -5,11 +6,11 @@ pub struct ApiKey {
     pub id: i32,
     pub key_owner: String,
     pub apikey: String,
-    pub expires_at: chrono::NaiveDateTime,
+    pub expires_at: chrono::DateTime<Utc>,
 }
 
 impl ApiKey {
-    // Returns some if the key exists and is valid
+    /// Returns `Some(ApiKey)` if the key exists and is valid, otherwise `None`
     pub async fn get_key<'a>(
         key: &'a str,
         pool: &Pool<Postgres>,
@@ -18,7 +19,15 @@ impl ApiKey {
             .fetch_one(pool)
             .await?;
 
-        if result.apikey == key {
+        let expired_timestamp = result.expires_at.timestamp();
+        let current_timestamp = chrono::Utc::now().timestamp();
+
+        println!(
+            "current: {}, expires_at: {}",
+            current_timestamp, expired_timestamp
+        );
+
+        if result.apikey == key && (current_timestamp < expired_timestamp) {
             return Ok(Some(result));
         }
 
@@ -34,7 +43,7 @@ pub struct File {
     pub file_type: i16, // 0=IMAGE, 1=VIDEO, 2=OTHER
     pub file_size: i32,
     pub uploader: String, // as API Key
-    pub upload_date: chrono::NaiveDateTime,
+    pub upload_date: chrono::DateTime<Utc>,
 }
 
 impl File {

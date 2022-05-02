@@ -21,7 +21,7 @@ impl<'a> FromRequest<'a> for ApiKey {
 
         match req.headers().get_one("X-API-Key") {
             Some(key) => {
-                if let Ok(_) = crate::db::models::ApiKey::get_key(key, pool).await {
+                if let Ok(Some(_)) = crate::db::models::ApiKey::get_key(key, pool).await {
                     request::Outcome::Success(ApiKey(key.to_owned()))
                 } else {
                     request::Outcome::Failure((Status::Unauthorized, "API Key is invalid"))

@@ -7,7 +7,7 @@ CREATE TABLE files (
     file_type SMALLINT CHECK(file_type IN (0, 1, 2)) NOT NULL DEFAULT 2, 
     file_size INTEGER NOT NULL,
     uploader CHAR(64) NOT NULL,
-    upload_date TIMESTAMP NOT NULL
+    upload_date TIMESTAMPTZ NOT NULL
 );
 
 CREATE UNIQUE INDEX hash_idx ON files(file_hash);

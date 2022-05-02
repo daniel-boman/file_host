@@ -20,7 +20,7 @@ pub fn get_routes_and_docs(settings: &OpenApiSettings) -> (Vec<rocket::Route>, O
 }
 
 #[openapi(tag = "Files")]
-#[get("/get?<id>")]
+#[get("/?<id>")]
 /// Gets file by id
 pub async fn get_file(id: String, pool: &rocket::State<sqlx::PgPool>) -> Result<NamedFile, Error> {
     let file = models::File::get_by_id(id, pool).await?;
@@ -33,7 +33,7 @@ pub async fn get_file(id: String, pool: &rocket::State<sqlx::PgPool>) -> Result<
 }
 
 #[openapi(tag = "Files")]
-#[post("/upload", data = "<file>")]
+#[post("/", data = "<file>")]
 /// Uploads provided file.  
 ///
 /// **Only accepts images.**
@@ -90,7 +90,7 @@ pub async fn upload(
         file_type: 0,
         file_size: result.len() as i32,
         uploader: api_key.0,
-        upload_date: chrono::Utc::now().naive_utc(),
+        upload_date: chrono::Utc::now(),
     }
     .create(pool)
     .await?;
@@ -103,30 +103,3 @@ pub struct FileUpload {
     id: String,
     ext: String,
 }
-
-/*let header = file.peek(128usize).await;
-let kind = infer::get(&header).expect("Filetype is unknown");
-
-if !infer::is_image(&header) {
-    return Err(Error::Custom(
-        Status::BadRequest.code,
-        "This route only accepts images".to_string(),
-    ));
-}
-
-let id = Uuid::new_v4();
-let ext = kind.extension();
-
-let file_upload = FileUpload::new(id.to_string(), ext.to_string());
-let filename = format!("upload/{filename}", filename = file_upload.filename());
-
-if let Err(err) = file.open(5i32.megabytes()).into_file(filename).await {
-    println!("Error uploading file: {:?}", err);
-
-    return Err(Error::Custom(
-        Status::InternalServerError.code,
-        "Failed to upload file".to_string(),
-    ));
-};
-
-Ok(Json::from(file_upload))*/

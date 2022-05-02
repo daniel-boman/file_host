@@ -2,14 +2,13 @@
 extern crate rocket;
 
 use rocket::{Build, Rocket};
-use rocket_okapi::mount_endpoints_and_merged_docs;
-use rocket_okapi::swagger_ui::{make_swagger_ui, SwaggerUIConfig};
-use rocket_okapi::{okapi::openapi3::OpenApi, rapidoc::*, settings::UrlObject};
+use rocket_okapi::{
+    mount_endpoints_and_merged_docs, okapi::openapi3::OpenApi, rapidoc::*, settings::UrlObject,
+};
 
 pub mod api;
 pub mod db;
 mod error;
-mod files;
 
 #[rocket::main]
 async fn main() {
@@ -23,46 +22,37 @@ async fn main() {
 async fn build_rocket() -> Rocket<Build> {
     dotenv::dotenv().ok();
 
-    let mut build = db::init(rocket::build())
-        .await
-        .mount(
-            "/swagger-ui/",
-            make_swagger_ui(&SwaggerUIConfig {
-                url: "../v1/openapi.json".to_owned(),
-                ..Default::default()
-            }),
-        )
-        .mount(
-            "/rapidoc/",
-            make_rapidoc(&RapiDocConfig {
-                general: GeneralConfig {
-                    spec_urls: vec![UrlObject::new("General", "../v1/openapi.json")],
+    let mut build = db::init(rocket::build()).await.mount(
+        "/rapidoc/",
+        make_rapidoc(&RapiDocConfig {
+            general: GeneralConfig {
+                spec_urls: vec![UrlObject::new("General", "../v1/openapi.json")],
 
-                    ..Default::default()
-                },
-                hide_show: HideShowConfig {
-                    allow_spec_url_load: false,
-                    allow_spec_file_load: false,
-                    ..Default::default()
-                },
-                ui: UiConfig {
-                    theme: Theme::Dark,
-                    ..Default::default()
-                },
                 ..Default::default()
-            }),
-        );
+            },
+            ui: UiConfig {
+                theme: Theme::Dark,
+                ..Default::default()
+            },
+            hide_show: HideShowConfig {
+                allow_spec_url_load: false,
+                allow_spec_file_load: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    );
 
     let settings = rocket_okapi::settings::OpenApiSettings::default();
     let route_spec = (vec![], custom_spec());
     //let route_spec = (openapi_get_routes![index], custom_spec()); // TODO: fix this
+    use api::routes;
     mount_endpoints_and_merged_docs! {
         build, "/v1".to_owned(), settings,
         "/" => route_spec,
-        "/file" => files::get_routes_and_docs(&settings),
+        "/file" => routes::files::get_routes_and_docs(&settings),
     };
 
-    // build.register("/", catchers![not_found_index])
     build
 }
 
